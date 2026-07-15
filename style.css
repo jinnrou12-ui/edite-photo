@@ -747,6 +747,31 @@ body {
   border: 1px solid rgba(255,255,255,0.1);
 }
 
+/* ── AUTO NOTICE ── */
+.auto-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(52,211,153,0.07);
+  border: 1px solid rgba(52,211,153,0.2);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  grid-column: 1 / -1;
+}
+.auto-notice strong { color: var(--green); }
+.auto-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  flex-shrink: 0;
+  margin-top: 4px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
 /* ── FEATURES PANEL ── */
 .features-grid {
   display: grid;

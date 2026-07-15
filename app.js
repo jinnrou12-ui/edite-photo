@@ -22,17 +22,13 @@ const resultsSection=$('resultsSection'),resultsGrid=$('resultsGrid');
 const downloadAllBtn=$('downloadAllBtn'),statusText=$('statusText'),statusPill=$('statusPill');
 
 /* ── SLIDER WIRING ── */
-const skinStrength=$('skinStrength'),skinStrengthVal=$('skinStrengthVal');
 const blurRadius=$('blurRadius'),blurRadiusVal=$('blurRadiusVal');
 const smoothStr=$('smoothStr'),smoothStrVal=$('smoothStrVal');
-skinStrength.addEventListener('input',()=>skinStrengthVal.textContent=skinStrength.value+'%');
 blurRadius.addEventListener('input',()=>blurRadiusVal.textContent=blurRadius.value+'px');
 smoothStr.addEventListener('input',()=>smoothStrVal.textContent=smoothStr.value+'%');
 
 function getToggles(){
   return{
-    skin:$('togSkin').checked,skinStr:skinStrength.value/100,
-    light:$('togLight').checked,
     blur:$('togBlur').checked,blurR:parseInt(blurRadius.value),
     vibrance:$('togVibrance').checked,
     grade:$('togGrade').checked,
@@ -68,27 +64,30 @@ function processImage(img,lut,srcStats,opts){
   let d=new Uint8ClampedArray(id.data);
   const w=c.width,h=c.height;
 
-  // 1. Lighting balance
-  if(opts.light){
-    const expF=srcStats.exposure==='under'?computeExpGamma(srcStats.mL):srcStats.exposure==='over'?computeExpGamma(srcStats.mL):1;
-    for(let i=0;i<d.length;i+=4){
-      const[r,g,b]=balanceLight(d[i],d[i+1],d[i+2]);
-      if(expF!==1){
-        d[i]=clamp255(Math.pow(r/255,1/expF)*255);
-        d[i+1]=clamp255(Math.pow(g/255,1/expF)*255);
-        d[i+2]=clamp255(Math.pow(b/255,1/expF)*255);
-      } else {d[i]=r;d[i+1]=g;d[i+2]=b;}
+  // ── AUTO: Lighting balance + exposure (always runs, only corrects if needed) ──
+  const expF=srcStats.exposure==='under'?computeExpGamma(srcStats.mL)
+            :srcStats.exposure==='over' ?computeExpGamma(srcStats.mL):1;
+  for(let i=0;i<d.length;i+=4){
+    // Per-pixel lighting balance
+    let[r,g,b]=balanceLight(d[i],d[i+1],d[i+2]);
+    // Gamma-based exposure correction only when needed
+    if(expF!==1){
+      r=clamp255(Math.pow(r/255,1/expF)*255);
+      g=clamp255(Math.pow(g/255,1/expF)*255);
+      b=clamp255(Math.pow(b/255,1/expF)*255);
     }
-  }
-
-  // 2. Skin brightening
-  if(opts.skin){
-    for(let i=0;i<d.length;i+=4){
-      if(isSkin(d[i],d[i+1],d[i+2])){
-        const[r,g,b]=brightenSkin(d[i],d[i+1],d[i+2],opts.skinStr);
-        d[i]=r;d[i+1]=g;d[i+2]=b;
+    // Auto skin exposure: brighten skin pixels that are locally dark
+    if(isSkin(r,g,b)){
+      const skinL=(0.299*r+0.587*g+0.114*b)/255;
+      if(skinL<0.45){// skin area underexposed — lift gently
+        const lift=1+(0.45-skinL)*0.6;
+        r=clamp255(r*lift);g=clamp255(g*lift);b=clamp255(b*lift);
+      } else if(skinL>0.88){// skin overexposed — pull back gently
+        const pull=1-(skinL-0.88)*0.5;
+        r=clamp255(r*pull);g=clamp255(g*pull);b=clamp255(b*pull);
       }
     }
+    d[i]=r;d[i+1]=g;d[i+2]=b;
   }
 
   // 3. Skin smoothing beauty filter
