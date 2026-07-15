@@ -53,8 +53,9 @@ function getPixels(img,max=512){
   const c=document.createElement('canvas');
   const s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
   c.width=Math.round(img.naturalWidth*s);c.height=Math.round(img.naturalHeight*s);
-  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-  return c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  const ctx2=c.getContext('2d');
+  ctx2.drawImage(img,0,0,c.width,c.height);
+  return ctx2.getImageData(0,0,c.width,c.height).data;
 }
 
 /* ── MAIN PROCESSING ── */
@@ -283,7 +284,7 @@ applyBtn.addEventListener('click',async()=>{
     await new Promise(r=>setTimeout(r,0));
 
     const srcPx=getPixels(t.img);
-    const lut=opts.grade?buildLUT(buildCDF(srcPx),refCDF):null;
+    const lut=(opts.grade&&refCDF)?buildLUT(buildCDF(srcPx),refCDF):null;
     const adjs=['Auto Lighting'];
     if(opts.smooth)adjs.push('Skin smooth');
     if(opts.blur)adjs.push('BG blur');
