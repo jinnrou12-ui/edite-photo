@@ -52,6 +52,44 @@
     </header>
 
     <main class="workspace">
+
+      <!-- ══ PRESETS BAR ══ -->
+      <section class="presets-bar">
+        <div class="presets-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Auto Presets
+        </div>
+        <div class="presets-list">
+          <button class="preset-btn" data-preset="golden" id="preset-golden">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#f59e0b,#ef4444,#92400e)"></span>
+            🌅 Golden Hour
+          </button>
+          <button class="preset-btn" data-preset="cinematic" id="preset-cinematic">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#0f766e,#1e293b,#c2410c)"></span>
+            🎬 Cinematic
+          </button>
+          <button class="preset-btn" data-preset="soft" id="preset-soft">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#fce7f3,#fda4af,#f9a8d4)"></span>
+            🌸 Soft & Airy
+          </button>
+          <button class="preset-btn" data-preset="film" id="preset-film">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#78716c,#d6d3d1,#a8a29e)"></span>
+            📷 Film
+          </button>
+          <button class="preset-btn" data-preset="vivid" id="preset-vivid">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#7c3aed,#db2777,#ea580c)"></span>
+            ✨ Vivid
+          </button>
+          <button class="preset-btn" data-preset="moody" id="preset-moody">
+            <span class="preset-swatch" style="background:linear-gradient(135deg,#1e3a5f,#134e4a,#1f2937)"></span>
+            🌑 Moody
+          </button>
+          <button class="preset-btn preset-none active" data-preset="" id="preset-none">
+            ✕ None
+          </button>
+        </div>
+      </section>
+
       <!-- ══ SECTION 1: REFERENCE ══ -->
       <section class="panel reference-panel" id="referencePanel">
         <div class="panel-header">

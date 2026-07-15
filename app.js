@@ -2,11 +2,11 @@ import {
   rgbToHsl,hslToRgb,clamp,clamp255,isSkin,brightenSkin,
   balanceLight,boostVibrancy,applyClarity,boxBlurRGBA,
   buildForegroundMask,applyBgBlur,buildCDF,buildLUT,analysePixels,
-  smoothSkin,upscaleTo2K
+  smoothSkin,upscaleTo2K,applyPreset
 } from './engine.js';
 
 /* ── STATE ── */
-const state={refImage:null,refData:null,targets:[],results:[]};
+const state={refImage:null,refData:null,targets:[],results:[],activePreset:''};
 
 /* ── DOM ── */
 const $=id=>document.getElementById(id);
@@ -38,6 +38,7 @@ function getToggles(){
     grade:$('togGrade').checked,
     smooth:$('togSmooth').checked,smoothStr:($('smoothStr').value/100),
     upscale:$('togUpscale').checked,
+    preset:state.activePreset,
   };
 }
 
@@ -93,8 +94,10 @@ function processImage(img,lut,srcStats,opts){
   // 3. Skin smoothing beauty filter
   if(opts.smooth) d=smoothSkin(d,w,h,opts.smoothStr);
 
-  // 4. Color grade transfer via histogram LUT
-  if(opts.grade&&lut){
+  // 4. Color grade: preset OR histogram LUT from reference
+  if(opts.preset){
+    d=applyPreset(d,opts.preset);
+  } else if(opts.grade&&lut){
     for(let i=0;i<d.length;i+=4){
       d[i]=lut[0][d[i]];d[i+1]=lut[1][d[i+1]];d[i+2]=lut[2][d[i+2]];
     }
@@ -211,7 +214,24 @@ refInput.addEventListener('change',e=>{if(e.target.files[0])loadReference(e.targ
 setupDrop(targetDropZone,addTargets);
 targetInputDrop.addEventListener('change',e=>{addTargets(e.target.files);e.target.value='';});
 
-function updateApply(){applyBtn.disabled=!(state.refData&&state.targets.length>0);}
+function updateApply(){
+  applyBtn.disabled=!(state.targets.length>0&&(state.refData||state.activePreset));
+}
+
+/* ── PRESET BUTTONS ── */
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.activePreset=btn.dataset.preset||'';
+    updateApply();
+    if(state.activePreset){
+      setStatus(`Preset: ${btn.textContent.trim()}`,'var(--purple)');
+    } else {
+      setStatus('Ready');
+    }
+  });
+});
 
 /* ── RUN ── */
 applyBtn.addEventListener('click',async()=>{

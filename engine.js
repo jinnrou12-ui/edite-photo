@@ -193,6 +193,60 @@ export function analysePixels(pixels){
   return{mR,mG,mB,mL,warmBias,exposure};
 }
 
+// ── Built-in color grade presets ──
+const _sCurve=(v,str=0.18)=>{const n=v/255;return clamp255((n+(str*Math.sin(Math.PI*n)))*255);};
+
+export const PRESETS={
+  golden:(r,g,b)=>{
+    // Warm golden hour: lifted shadows, orange highlights, slight teal in darks
+    const l=(r*0.299+g*0.587+b*0.114)/255;
+    const w=l*22,c=l*8;
+    return[clamp255(r+w),clamp255(g+w*0.25),clamp255(b-c)];
+  },
+  cinematic:(r,g,b)=>{
+    // Classic teal-orange: cool shadows, warm highlights
+    const l=(r*0.299+g*0.587+b*0.114)/255;
+    if(l<0.42)return[clamp255(r*0.82),clamp255(g*1.04+4),clamp255(b*1.18+12)];
+    return[clamp255(r*1.1+12),clamp255(g*1.0),clamp255(b*0.85)];
+  },
+  soft:(r,g,b)=>{
+    // Airy & soft: lifted blacks, pastel, slight pink warmth
+    return[clamp255(r*0.82+28+6),clamp255(g*0.82+28),clamp255(b*0.84+26)];
+  },
+  film:(r,g,b)=>{
+    // Film emulation: faded blacks, desaturated, slight yellow cast
+    let[h,s,l]=rgbToHsl(r,g,b);
+    s*=0.72;
+    if(l<0.12)l+=0.06;
+    const[nr,ng,nb]=hslToRgb(h,s,l);
+    return[clamp255(nr+4),clamp255(ng+2),clamp255(nb-3)];
+  },
+  vivid:(r,g,b)=>{
+    // Punchy & vivid: deep shadows, rich color, high contrast
+    let[h,s,l]=rgbToHsl(r,g,b);
+    s=clamp(s*1.4,0,1);
+    l=l<0.5?l*0.92:clamp(l*1.04,0,1);
+    return hslToRgb(h,s,l);
+  },
+  moody:(r,g,b)=>{
+    // Dark & moody: deep shadows, muted mids, cool blue-green tone
+    const l=(r*0.299+g*0.587+b*0.114)/255;
+    const crush=l<0.3?0.75:1;
+    return[clamp255(r*crush*0.88),clamp255(g*crush*0.92+3),clamp255(b*crush*1.08+8)];
+  },
+};
+
+export function applyPreset(pixels,presetName){
+  const fn=PRESETS[presetName];
+  if(!fn)return pixels;
+  const out=new Uint8ClampedArray(pixels.length);
+  for(let i=0;i<pixels.length;i+=4){
+    const[r,g,b]=fn(pixels[i],pixels[i+1],pixels[i+2]);
+    out[i]=r;out[i+1]=g;out[i+2]=b;out[i+3]=pixels[i+3];
+  }
+  return out;
+}
+
 // ── Skin smoothing: edge-preserving beauty filter ──
 export function smoothSkin(pixels,w,h,strength){
   // Two blur passes for smooth base
