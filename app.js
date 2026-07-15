@@ -21,21 +21,24 @@ const processingFill=$('processingFill'),processingCount=$('processingCount');
 const resultsSection=$('resultsSection'),resultsGrid=$('resultsGrid');
 const downloadAllBtn=$('downloadAllBtn'),statusText=$('statusText'),statusPill=$('statusPill');
 
-/* ── SLIDER WIRING ── */
-const blurRadius=$('blurRadius'),blurRadiusVal=$('blurRadiusVal');
-const blurStrength=$('blurStrength'),blurStrengthVal=$('blurStrengthVal');
-const smoothStr=$('smoothStr'),smoothStrVal=$('smoothStrVal');
-blurRadius.addEventListener('input',()=>blurRadiusVal.textContent=blurRadius.value+'px');
-blurStrength.addEventListener('input',()=>blurStrengthVal.textContent=blurStrength.value+'%');
-smoothStr.addEventListener('input',()=>smoothStrVal.textContent=smoothStr.value+'%');
+/* ── SLIDER WIRING (null-safe) ── */
+function wireSlider(id,valId,suffix){
+  const el=document.getElementById(id),vl=document.getElementById(valId);
+  if(el&&vl)el.addEventListener('input',()=>vl.textContent=el.value+suffix);
+  return el||{value:{'blurRadius':'6','blurStrength':'80','smoothStr':'60'}[id]||'0'};
+}
+const blurRadius=wireSlider('blurRadius','blurRadiusVal','px');
+const blurStrength=wireSlider('blurStrength','blurStrengthVal','%');
+const smoothStrEl=wireSlider('smoothStr','smoothStrVal','%');
 
 function getToggles(){
+  const tog=id=>{const el=$( id);return el?el.checked:false;};
   return{
-    blur:$('togBlur').checked,blurR:parseInt(blurRadius.value),blurStr:blurStrength.value/100,
-    vibrance:$('togVibrance').checked,
-    grade:$('togGrade').checked,
-    smooth:$('togSmooth').checked,smoothStr:($('smoothStr').value/100),
-    upscale:$('togUpscale').checked,
+    blur:tog('togBlur'),blurR:parseInt(blurRadius.value)||6,blurStr:(blurStrength.value||80)/100,
+    vibrance:tog('togVibrance'),
+    grade:tog('togGrade'),
+    smooth:tog('togSmooth'),smoothStr:((smoothStrEl.value||60)/100),
+    upscale:tog('togUpscale'),
     preset:state.activePreset,
   };
 }
