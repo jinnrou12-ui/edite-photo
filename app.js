@@ -2,7 +2,7 @@ import {
   rgbToHsl,hslToRgb,clamp,clamp255,isSkin,brightenSkin,
   balanceLight,boostVibrancy,applyClarity,boxBlurRGBA,
   buildForegroundMask,applyBgBlur,buildCDF,buildLUT,analysePixels,
-  smoothSkin,upscaleTo2K,applyPreset
+  smoothSkin,upscaleTo2K,applyPreset,addSkinGloss
 } from './engine.js';
 
 /* ── STATE ── */
@@ -23,13 +23,15 @@ const downloadAllBtn=$('downloadAllBtn'),statusText=$('statusText'),statusPill=$
 
 /* ── SLIDER WIRING ── */
 const blurRadius=$('blurRadius'),blurRadiusVal=$('blurRadiusVal');
+const blurStrength=$('blurStrength'),blurStrengthVal=$('blurStrengthVal');
 const smoothStr=$('smoothStr'),smoothStrVal=$('smoothStrVal');
 blurRadius.addEventListener('input',()=>blurRadiusVal.textContent=blurRadius.value+'px');
+blurStrength.addEventListener('input',()=>blurStrengthVal.textContent=blurStrength.value+'%');
 smoothStr.addEventListener('input',()=>smoothStrVal.textContent=smoothStr.value+'%');
 
 function getToggles(){
   return{
-    blur:$('togBlur').checked,blurR:parseInt(blurRadius.value),
+    blur:$('togBlur').checked,blurR:parseInt(blurRadius.value),blurStr:blurStrength.value/100,
     vibrance:$('togVibrance').checked,
     grade:$('togGrade').checked,
     smooth:$('togSmooth').checked,smoothStr:($('smoothStr').value/100),
@@ -69,10 +71,13 @@ async function processImage(img,lut,srcStats,opts){
   ctx.drawImage(img,0,0,wW,wH);
   let d=new Uint8ClampedArray(ctx.getImageData(0,0,wW,wH).data);
 
-  // 1. AUTO: Lighting balance + exposure (always on)
+  // 1. AUTO: Lighting balance + brightness boost (always on)
   const expF=srcStats.exposure!=='normal'?computeExpGamma(srcStats.mL):1;
+  const brightBoost=1.10; // global brightness lift
   for(let i=0;i<d.length;i+=4){
     let[r,g,b]=balanceLight(d[i],d[i+1],d[i+2]);
+    // Global brightness increase
+    r=clamp255(r*brightBoost);g=clamp255(g*brightBoost);b=clamp255(b*brightBoost);
     if(expF!==1){
       r=clamp255(Math.pow(r/255,1/expF)*255);
       g=clamp255(Math.pow(g/255,1/expF)*255);
@@ -80,15 +85,25 @@ async function processImage(img,lut,srcStats,opts){
     }
     if(isSkin(r,g,b)){
       const sL=(0.299*r+0.587*g+0.114*b)/255;
-      if(sL<0.45){const lf=1+(0.45-sL)*0.6;r=clamp255(r*lf);g=clamp255(g*lf);b=clamp255(b*lf);}
-      else if(sL>0.88){const pl=1-(sL-0.88)*0.5;r=clamp255(r*pl);g=clamp255(g*pl);b=clamp255(b*pl);}
+      if(sL<0.45){const lf=1+(0.45-sL)*0.55;r=clamp255(r*lf);g=clamp255(g*lf);b=clamp255(b*lf);}
+      else if(sL>0.88){const pl=1-(sL-0.88)*0.45;r=clamp255(r*pl);g=clamp255(g*pl);b=clamp255(b*pl);}
     }
     d[i]=r;d[i+1]=g;d[i+2]=b;
   }
   await tick();
 
-  // 2. Skin smoothing
-  if(opts.smooth){d=smoothSkin(d,wW,wH,opts.smoothStr);await tick();}
+  // 2. Skin smoothing + gloss (skin only)
+  if(opts.smooth){
+    d=smoothSkin(d,wW,wH,opts.smoothStr);
+    // Skin gloss: specular sheen on skin highlights
+    for(let i=0;i<d.length;i+=4){
+      if(isSkin(d[i],d[i+1],d[i+2])){
+        const[r,g,b]=addSkinGloss(d[i],d[i+1],d[i+2],0.6);
+        d[i]=r;d[i+1]=g;d[i+2]=b;
+      }
+    }
+    await tick();
+  }
 
   // 3. Color grade: preset OR LUT
   if(opts.preset){
@@ -98,17 +113,23 @@ async function processImage(img,lut,srcStats,opts){
   }
   await tick();
 
-  // 4. Vibrancy + clarity
+  // 4. Vibrancy + clarity (clothing/non-skin only)
   if(opts.vibrance){
-    for(let i=0;i<d.length;i+=4){const[r,g,b]=boostVibrancy(d[i],d[i+1],d[i+2],0.28);d[i]=r;d[i+1]=g;d[i+2]=b;}
+    for(let i=0;i<d.length;i+=4){
+      // Skip skin — saturation boost only for clothing, robes, backgrounds
+      if(!isSkin(d[i],d[i+1],d[i+2])){
+        const[r,g,b]=boostVibrancy(d[i],d[i+1],d[i+2],0.35);
+        d[i]=r;d[i+1]=g;d[i+2]=b;
+      }
+    }
     d=applyClarity(d,wW,wH,2,0.45);
     await tick();
   }
 
-  // 5. Background blur (uses fast dilation now)
+  // 5. Background blur with customizable strength
   if(opts.blur){
     const mask=buildForegroundMask(d,wW,wH);
-    d=applyBgBlur(d,wW,wH,opts.blurR,mask);
+    d=applyBgBlur(d,wW,wH,opts.blurR,mask,opts.blurStr);
     await tick();
   }
 
@@ -136,7 +157,7 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
 
 
 function computeExpGamma(mL){
-  const target=128,diff=target-mL,s=0.5;
+  const target=148,diff=target-mL,s=0.52;
   return clamp(1+(diff/Math.max(mL,1))*s,0.65,2.0);
 }
 

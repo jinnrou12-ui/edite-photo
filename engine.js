@@ -168,21 +168,23 @@ export function buildForegroundMask(pixels,w,h){
   return out;
 }
 
-// ── Apply background blur using mask ──
-export function applyBgBlur(pixels,w,h,radius,mask){
+// ── Apply background blur using mask (strength 0-1 controls blur intensity) ──
+export function applyBgBlur(pixels,w,h,radius,mask,strength){
+  strength=strength==null?1:strength;
   const blurred=boxBlurRGBA(pixels,w,h,radius);
-  // Second pass for stronger blur
   const blurred2=boxBlurRGBA(blurred,w,h,Math.ceil(radius*0.6));
   const out=new Uint8ClampedArray(pixels.length);
   for(let i=0;i<w*h;i++){
     const idx=i*4;
-    const fg=mask[i]; // 1=foreground keep sharp, 0=background blur
+    const fg=mask[i];
+    const ba=(1-fg)*strength; // blur amount: 0=sharp, 1=fully blurred
     for(let c=0;c<3;c++){
-      out[idx+c]=Math.round(pixels[idx+c]*fg+blurred2[idx+c]*(1-fg));
+      out[idx+c]=Math.round(pixels[idx+c]*(1-ba)+blurred2[idx+c]*ba);
     }
     out[idx+3]=255;
   }
   return out;
+}
 }
 
 // ── Histogram CDF ──
@@ -206,8 +208,19 @@ export function analysePixels(pixels){
   for(let i=0;i<pixels.length;i+=4){const r=pixels[i],g=pixels[i+1],b=pixels[i+2];sR+=r;sG+=g;sB+=b;sL+=0.299*r+0.587*g+0.114*b;}
   const mR=sR/n,mG=sG/n,mB=sB/n,mL=sL/n;
   const warmBias=(mR-mB)/255;
-  const exposure=mL<80?'under':mL>175?'over':'normal';
+  const exposure=mL<90?'under':mL>175?'over':'normal';
   return{mR,mG,mB,mL,warmBias,exposure};
+}
+
+// ── Skin gloss: subtle specular sheen on skin highlights only ──
+export function addSkinGloss(r,g,b,amount){
+  let[h,s,l]=rgbToHsl(r,g,b);
+  if(l>0.5){// only lighter/highlight areas of skin
+    const boost=(l-0.5)*amount*0.5;
+    l=clamp(l+boost,0,1);
+    s=clamp(s*(1-boost*0.4),0,1); // slight desaturation = glowing white sheen
+  }
+  return hslToRgb(h,s,l);
 }
 
 // ── Built-in color grade presets ──
