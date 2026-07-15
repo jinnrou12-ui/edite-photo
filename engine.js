@@ -185,7 +185,6 @@ export function applyBgBlur(pixels,w,h,radius,mask,strength){
   }
   return out;
 }
-}
 
 // ── Histogram CDF ──
 export function buildCDF(pixels){
