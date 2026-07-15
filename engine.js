@@ -129,26 +129,43 @@ export function buildForegroundMask(pixels,w,h){
       const i=(y*w+x)*4;
       const skin=isSkin(pixels[i],pixels[i+1],pixels[i+2])?1:0;
       const d=Math.sqrt((x-cx)**2+(y-cy)**2);
-      const center=clamp(1-d/maxD*0.9,0,1);
-      mask[y*w+x]=clamp(skin*0.7+center*0.3,0,1);
+      const center=clamp(1-d/maxD*0.85,0,1);
+      mask[y*w+x]=clamp(skin*0.75+center*0.25,0,1);
     }
   }
-  // Dilate: simple box expand
-  const dilated=new Float32Array(w*h);
-  const dr=Math.max(8,Math.round(Math.min(w,h)*0.06));
+  // Fast separable dilation (horizontal then vertical max-filter)
+  const dr=Math.max(6,Math.round(Math.min(w,h)*0.05));
+  const tmp=new Float32Array(w*h);
+  // Horizontal pass
   for(let y=0;y<h;y++){
+    let mx=0;
+    for(let x=0;x<dr;x++)mx=Math.max(mx,mask[y*w+x]);
     for(let x=0;x<w;x++){
-      let mx=0;
-      for(let dy=-dr;dy<=dr;dy+=2){
-        for(let dx=-dr;dx<=dr;dx+=2){
-          const nx=clamp(x+dx,0,w-1),ny=clamp(y+dy,0,h-1);
-          mx=Math.max(mx,mask[ny*w+nx]);
-        }
+      if(x+dr<w)mx=Math.max(mx,mask[y*w+x+dr]);
+      tmp[y*w+x]=mx;
+      if(x-dr>=0&&mask[y*w+x-dr]>=mx){
+        mx=0;
+        const lo=Math.max(0,x-dr+1),hi=Math.min(w-1,x+dr);
+        for(let k=lo;k<=hi;k++)mx=Math.max(mx,mask[y*w+k]);
       }
-      dilated[y*w+x]=mx;
     }
   }
-  return dilated;
+  // Vertical pass
+  const out=new Float32Array(w*h);
+  for(let x=0;x<w;x++){
+    let mx=0;
+    for(let y=0;y<dr;y++)mx=Math.max(mx,tmp[y*w+x]);
+    for(let y=0;y<h;y++){
+      if(y+dr<h)mx=Math.max(mx,tmp[(y+dr)*w+x]);
+      out[y*w+x]=mx;
+      if(y-dr>=0&&tmp[(y-dr)*w+x]>=mx){
+        mx=0;
+        const lo=Math.max(0,y-dr+1),hi=Math.min(h-1,y+dr);
+        for(let k=lo;k<=hi;k++)mx=Math.max(mx,tmp[k*w+x]);
+      }
+    }
+  }
+  return out;
 }
 
 // ── Apply background blur using mask ──

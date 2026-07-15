@@ -56,74 +56,84 @@ function getPixels(img,max=512){
 }
 
 /* ── MAIN PROCESSING ── */
-function processImage(img,lut,srcStats,opts){
-  const c=document.createElement('canvas');
-  c.width=img.naturalWidth;c.height=img.naturalHeight;
-  const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
-  const id=ctx.getImageData(0,0,c.width,c.height);
-  let d=new Uint8ClampedArray(id.data);
-  const w=c.width,h=c.height;
+async function processImage(img,lut,srcStats,opts){
+  // Work at capped resolution — all heavy ops at ≤900px, scale up at end
+  const MAX=900;
+  const sc=Math.min(1,MAX/Math.max(img.naturalWidth,img.naturalHeight));
+  const wW=Math.round(img.naturalWidth*sc),wH=Math.round(img.naturalHeight*sc);
 
-  // ── AUTO: Lighting balance + exposure (always runs, only corrects if needed) ──
-  const expF=srcStats.exposure==='under'?computeExpGamma(srcStats.mL)
-            :srcStats.exposure==='over' ?computeExpGamma(srcStats.mL):1;
+  const c=document.createElement('canvas');
+  c.width=wW;c.height=wH;
+  const ctx=c.getContext('2d');
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(img,0,0,wW,wH);
+  let d=new Uint8ClampedArray(ctx.getImageData(0,0,wW,wH).data);
+
+  // 1. AUTO: Lighting balance + exposure (always on)
+  const expF=srcStats.exposure!=='normal'?computeExpGamma(srcStats.mL):1;
   for(let i=0;i<d.length;i+=4){
-    // Per-pixel lighting balance
     let[r,g,b]=balanceLight(d[i],d[i+1],d[i+2]);
-    // Gamma-based exposure correction only when needed
     if(expF!==1){
       r=clamp255(Math.pow(r/255,1/expF)*255);
       g=clamp255(Math.pow(g/255,1/expF)*255);
       b=clamp255(Math.pow(b/255,1/expF)*255);
     }
-    // Auto skin exposure: brighten skin pixels that are locally dark
     if(isSkin(r,g,b)){
-      const skinL=(0.299*r+0.587*g+0.114*b)/255;
-      if(skinL<0.45){// skin area underexposed — lift gently
-        const lift=1+(0.45-skinL)*0.6;
-        r=clamp255(r*lift);g=clamp255(g*lift);b=clamp255(b*lift);
-      } else if(skinL>0.88){// skin overexposed — pull back gently
-        const pull=1-(skinL-0.88)*0.5;
-        r=clamp255(r*pull);g=clamp255(g*pull);b=clamp255(b*pull);
-      }
+      const sL=(0.299*r+0.587*g+0.114*b)/255;
+      if(sL<0.45){const lf=1+(0.45-sL)*0.6;r=clamp255(r*lf);g=clamp255(g*lf);b=clamp255(b*lf);}
+      else if(sL>0.88){const pl=1-(sL-0.88)*0.5;r=clamp255(r*pl);g=clamp255(g*pl);b=clamp255(b*pl);}
     }
     d[i]=r;d[i+1]=g;d[i+2]=b;
   }
+  await tick();
 
-  // 3. Skin smoothing beauty filter
-  if(opts.smooth) d=smoothSkin(d,w,h,opts.smoothStr);
+  // 2. Skin smoothing
+  if(opts.smooth){d=smoothSkin(d,wW,wH,opts.smoothStr);await tick();}
 
-  // 4. Color grade: preset OR histogram LUT from reference
+  // 3. Color grade: preset OR LUT
   if(opts.preset){
     d=applyPreset(d,opts.preset);
   } else if(opts.grade&&lut){
-    for(let i=0;i<d.length;i+=4){
-      d[i]=lut[0][d[i]];d[i+1]=lut[1][d[i+1]];d[i+2]=lut[2][d[i+2]];
-    }
+    for(let i=0;i<d.length;i+=4){d[i]=lut[0][d[i]];d[i+1]=lut[1][d[i+1]];d[i+2]=lut[2][d[i+2]];}
   }
+  await tick();
 
-  // 5. Vibrancy
+  // 4. Vibrancy + clarity
   if(opts.vibrance){
-    for(let i=0;i<d.length;i+=4){
-      const[r,g,b]=boostVibrancy(d[i],d[i+1],d[i+2],0.28);
-      d[i]=r;d[i+1]=g;d[i+2]=b;
-    }
+    for(let i=0;i<d.length;i+=4){const[r,g,b]=boostVibrancy(d[i],d[i+1],d[i+2],0.28);d[i]=r;d[i+1]=g;d[i+2]=b;}
+    d=applyClarity(d,wW,wH,2,0.45);
+    await tick();
   }
 
-  // 6. Clarity (unsharp mask)
-  if(opts.vibrance) d=applyClarity(d,w,h,2,0.45);
-
-  // 7. Background blur
+  // 5. Background blur (uses fast dilation now)
   if(opts.blur){
-    const mask=buildForegroundMask(d,w,h);
-    d=applyBgBlur(d,w,h,opts.blurR,mask);
+    const mask=buildForegroundMask(d,wW,wH);
+    d=applyBgBlur(d,wW,wH,opts.blurR,mask);
+    await tick();
   }
 
-  const out=ctx.createImageData(w,h);
-  out.data.set(d);ctx.putImageData(out,0,0);
-  // 8. 2K upscale (last step so all edits are at full res first)
-  return opts.upscale?upscaleTo2K(c):c;
+  // Write back at work resolution
+  const od=ctx.createImageData(wW,wH);od.data.set(d);ctx.putImageData(od,0,0);
+
+  // 6. Scale to original or 2K
+  if(opts.upscale) return upscaleTo2K(c);
+  if(sc<1){
+    // Scale back to original resolution
+    const orig=document.createElement('canvas');
+    orig.width=img.naturalWidth;orig.height=img.naturalHeight;
+    const octx=orig.getContext('2d');
+    octx.imageSmoothingEnabled=true;octx.imageSmoothingQuality='high';
+    octx.drawImage(c,0,0,img.naturalWidth,img.naturalHeight);
+    // Apply final sharpening at full res
+    const fid=octx.getImageData(0,0,orig.width,orig.height);
+    const sharp=applyClarity(fid.data,orig.width,orig.height,1,0.3);
+    const sod=octx.createImageData(orig.width,orig.height);sod.data.set(sharp);octx.putImageData(sod,0,0);
+    return orig;
+  }
+  return c;
 }
+const tick=()=>new Promise(r=>setTimeout(r,0));
+
 
 function computeExpGamma(mL){
   const target=128,diff=target-mL,s=0.5;
@@ -234,14 +244,14 @@ document.querySelectorAll('.preset-btn').forEach(btn=>{
 
 /* ── RUN ── */
 applyBtn.addEventListener('click',async()=>{
-  if(!state.refData||!state.targets.length)return;
+  if(!state.targets.length||((!state.refData)&&!state.activePreset))return;
   processingOverlay.style.display='flex';processingFill.style.width='0%';
   processingLabel.textContent='Preparing AI pipeline…';processingCount.textContent='';
   setStatus('Processing…','var(--orange)');
   await new Promise(r=>setTimeout(r,60));
 
   const opts=getToggles();
-  const refCDF=state.refData.cdf;
+  const refCDF=state.refData?state.refData.cdf:null;
   state.results=[];
 
   for(let i=0;i<state.targets.length;i++){
@@ -253,16 +263,15 @@ applyBtn.addEventListener('click',async()=>{
 
     const srcPx=getPixels(t.img);
     const lut=opts.grade?buildLUT(buildCDF(srcPx),refCDF):null;
-    const adjs=[];
-    if(opts.skin)adjs.push('Skin brightening');
+    const adjs=['Auto Lighting'];
     if(opts.smooth)adjs.push('Skin smooth');
-    if(opts.light)adjs.push(t.stats.exposure!=='normal'?'Exposure fix':'Lighting');
     if(opts.blur)adjs.push('BG blur');
     if(opts.vibrance)adjs.push('Vibrancy+Clarity');
-    if(opts.grade)adjs.push('Color grade');
+    if(opts.preset)adjs.push('Preset: '+opts.preset);
+    else if(opts.grade)adjs.push('Color grade');
     if(opts.upscale)adjs.push('2K upscale');
 
-    const canvas=processImage(t.img,lut,t.stats,opts);
+    const canvas=await processImage(t.img,lut,t.stats,opts);
     state.results.push({originalSrc:t.src,gradedSrc:canvas.toDataURL('image/jpeg',0.96),filename:t.file.name,adjs,exposure:t.stats.exposure});
   }
 
